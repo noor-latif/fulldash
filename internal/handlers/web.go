@@ -52,7 +52,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		templates.KanbanBoard(new, progress, done, paid).Render(r.Context(), w)
 	} else {
-		templates.Dashboard(metrics, new, progress, done, paid, search).Render(r.Context(), w)
+		templates.Layout("FullDash", templates.Dashboard(metrics, new, progress, done, paid, search)).Render(r.Context(), w)
 	}
 }
 
