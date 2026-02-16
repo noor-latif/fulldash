@@ -1,0 +1,67 @@
+package templates
+
+import (
+	"fmt"
+	"github.com/noor-latif/fulldash/internal/models"
+)
+
+// OwnerClass returns CSS class for owner
+templ OwnerClass(o models.Owner) {
+	switch o {
+		case models.OwnerNoor:
+			text-blue
+		case models.OwnerAhmad:
+			text-orange
+		default:
+			text-gray
+	}
+}
+
+// OwnerTag renders colored owner badge
+templ OwnerTag(o models.Owner) {
+	<span class={ "tag tag--" + string(o) }>
+		{ string(o) }
+	</span>
+}
+
+// StatusColumn renders a kanban column
+templ StatusColumn(title string, count int, status models.ProjectStatus, projects []models.Project) {
+	<div class="kanban__column" data-status={ string(status) }>
+		<h2 class="kanban__header">
+			{ title }
+			<span class="kanban__count">{ fmt.Sprintf("%d", count) }</span>
+		</h2>
+		<div class="kanban__list">
+			for _, p := range projects {
+				@ProjectCard(p)
+			}
+			if len(projects) == 0 {
+				<p class="kanban__empty">No projects</p>
+			}
+		</div>
+	</div>
+}
+
+// ProjectCard renders a project card
+templ ProjectCard(p models.Project) {
+	<article class="project-card" hx-get={ fmt.Sprintf("/projects/%d/edit", p.ID) } hx-target="#modal">
+		<div class="project-card__header">
+			<h3 class="project-card__client">{ p.Client }</h3>
+			@OwnerTag(p.SecuredBy)
+		</div>
+		if p.Description != "" {
+			<p class="project-card__desc">{ p.Description }</p>
+		}
+		if p.Revenue > 0 {
+			<p class="project-card__revenue">{ fmt.Sprintf("%.0f kr", p.Revenue) }</p>
+		}
+	</article>
+}
+
+// MetricsCard renders a metric card
+templ MetricsCard(label, value string, modifier string) {
+	<div class={ "metric-card", modifier }>
+		<span class="metric-card__value">{ value }</span>
+		<span class="metric-card__label">{ label }</span>
+	</div>
+}

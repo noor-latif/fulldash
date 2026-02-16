@@ -1,140 +1,129 @@
-// handlers/web.go - HTTP handlers for web UI
 package handlers
 
 import (
-	"html/template"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/noor-latif/fulldash/internal/db"
 	"github.com/noor-latif/fulldash/internal/models"
+	"github.com/noor-latif/fulldash/internal/store"
+	"github.com/noor-latif/fulldash/internal/templates"
 )
 
-// Handler holds dependencies
 type Handler struct {
-	DB        *db.DB
-	Templates *template.Template
+	DB *store.DB
 }
 
-// NewHandler creates handler with loaded templates
-func NewHandler(database *db.DB) (*Handler, error) {
-	tmpl, err := template.New("").Funcs(TemplateFuncs()).ParseGlob("web/templates/*.html")
-	if err != nil {
-		return nil, err
-	}
-
-	return &Handler{
-		DB:        database,
-		Templates: tmpl,
-	}, nil
+func New(db *store.DB) *Handler {
+	return &Handler{DB: db}
 }
 
-// Dashboard shows the main page with kanban and metrics
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.DB.GetDashboardStats()
+	search := r.URL.Query().Get("search")
+	
+	projects, err := h.DB.ListProjects(search)
 	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	pending, _ := h.DB.ListProjectsByStatus(models.StatusPending)
-	paid, _ := h.DB.ListProjectsByStatus(models.StatusPaid)
-	done, _ := h.DB.ListProjectsByStatus(models.StatusDone)
-
-	data := struct {
-		Stats   *models.DashboardStats
-		Pending []models.Project
-		Paid    []models.Project
-		Done    []models.Project
-	}{
-		Stats:   stats,
-		Pending: pending,
-		Paid:    paid,
-		Done:    done,
+	metrics, err := h.DB.GetMetrics()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
+	// Split by status
+	var new, progress, done, paid []models.Project
+	for _, p := range projects {
+		switch p.Status {
+		case models.StatusNew:
+			new = append(new, p)
+		case models.StatusProgress:
+			progress = append(progress, p)
+		case models.StatusDone:
+			done = append(done, p)
+		case models.StatusPaid:
+			paid = append(paid, p)
+		}
+	}
+
+	// Check if HTMX request
 	if r.Header.Get("HX-Request") == "true" {
-		h.Templates.ExecuteTemplate(w, "kanban", data)
+		templates.KanbanBoard(new, progress, done, paid).Render(r.Context(), w)
 	} else {
-		h.Templates.ExecuteTemplate(w, "dashboard", data)
+		templates.Dashboard(metrics, new, progress, done, paid, search).Render(r.Context(), w)
 	}
 }
 
-// ProjectCard renders a single project card (for HTMX swaps)
-func (h *Handler) ProjectCard(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	full, err := h.DB.GetProjectFull(id)
-	if err != nil || full == nil {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	h.Templates.ExecuteTemplate(w, "project-card", full)
-}
-
-// ProjectForm shows add/edit form
 func (h *Handler) ProjectForm(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	
-	var project *models.ProjectWithContributions
-	if idStr != "" {
+	var p *models.Project
+	var noorHours, ahmadHours float64
+	isEdit := idStr != ""
+	
+	if isEdit {
 		id, _ := strconv.ParseInt(idStr, 10, 64)
-		project, _ = h.DB.GetProjectFull(id)
+		p, _ = h.DB.GetProject(id)
+		if p != nil {
+			contribs, _ := h.DB.GetContributions(p.ID)
+			for _, c := range contribs {
+				if c.Owner == models.OwnerNoor {
+					noorHours = c.Hours
+				} else {
+					ahmadHours = c.Hours
+				}
+			}
+		}
 	}
-
-	data := struct {
-		Project *models.ProjectWithContributions
-		IsEdit  bool
-	}{
-		Project: project,
-		IsEdit:  idStr != "",
+	
+	if p == nil {
+		p = &models.Project{Status: models.StatusNew, SecuredBy: models.OwnerBoth}
 	}
-
-	h.Templates.ExecuteTemplate(w, "project-form", data)
+	
+	templates.ProjectForm(p, isEdit, noorHours, ahmadHours).Render(r.Context(), w)
 }
 
-// CreateProject handles POST /projects
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
-	amount, _ := strconv.ParseInt(r.FormValue("amount_cents"), 10, 64)
-	initialRevenue, _ := strconv.ParseFloat(r.FormValue("initial_revenue"), 64)
-
-	project := &models.Project{
-		Name:        r.FormValue("name"),
+	revenue, _ := strconv.ParseFloat(r.FormValue("revenue"), 64)
+	
+	p := &models.Project{
+		Client:    r.FormValue("client"),
 		Description: r.FormValue("description"),
-		Client:      r.FormValue("client"),
-		SecuredBy:   models.Owner(r.FormValue("secured_by")),
-		AmountCents: amount,
-		Revenue:     initialRevenue,
-		Status:      models.StatusPending,
+		SecuredBy: models.Owner(r.FormValue("secured_by")),
+		Status:    models.ProjectStatus(r.FormValue("status")),
+		Revenue:   revenue,
+	}
+	
+	if p.Status == "" {
+		p.Status = models.StatusNew
 	}
 
-	if err := h.DB.CreateProject(project); err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+	if err := h.DB.CreateProject(p); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Handle contributions
+	// Save contributions
 	noorHours, _ := strconv.ParseFloat(r.FormValue("noor_hours"), 64)
 	ahmadHours, _ := strconv.ParseFloat(r.FormValue("ahmad_hours"), 64)
 	
 	if noorHours > 0 {
-		h.DB.SetContribution(project.ID, models.OwnerNoor, noorHours)
+		h.DB.SetContribution(&models.Contribution{ProjectID: p.ID, Owner: models.OwnerNoor, Hours: noorHours})
 	}
 	if ahmadHours > 0 {
-		h.DB.SetContribution(project.ID, models.OwnerAhmad, ahmadHours)
+		h.DB.SetContribution(&models.Contribution{ProjectID: p.ID, Owner: models.OwnerAhmad, Hours: ahmadHours})
 	}
 
-	// Return updated kanban
 	h.Dashboard(w, r)
 }
 
-// UpdateProject handles PUT /projects/:id
 func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	
@@ -143,25 +132,22 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project, err := h.DB.GetProjectByID(id)
-	if err != nil || project == nil {
+	p, err := h.DB.GetProject(id)
+	if err != nil || p == nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	amount, _ := strconv.ParseInt(r.FormValue("amount_cents"), 10, 64)
 	revenue, _ := strconv.ParseFloat(r.FormValue("revenue"), 64)
+	
+	p.Client = r.FormValue("client")
+	p.Description = r.FormValue("description")
+	p.SecuredBy = models.Owner(r.FormValue("secured_by"))
+	p.Status = models.ProjectStatus(r.FormValue("status"))
+	p.Revenue = revenue
 
-	project.Name = r.FormValue("name")
-	project.Description = r.FormValue("description")
-	project.Client = r.FormValue("client")
-	project.SecuredBy = models.Owner(r.FormValue("secured_by"))
-	project.AmountCents = amount
-	project.Revenue = revenue
-	project.Status = models.ProjectStatus(r.FormValue("status"))
-
-	if err := h.DB.UpdateProject(project); err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+	if err := h.DB.UpdateProject(p); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -169,54 +155,19 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	noorHours, _ := strconv.ParseFloat(r.FormValue("noor_hours"), 64)
 	ahmadHours, _ := strconv.ParseFloat(r.FormValue("ahmad_hours"), 64)
 	
-	h.DB.SetContribution(project.ID, models.OwnerNoor, noorHours)
-	h.DB.SetContribution(project.ID, models.OwnerAhmad, ahmadHours)
+	h.DB.SetContribution(&models.Contribution{ProjectID: p.ID, Owner: models.OwnerNoor, Hours: noorHours})
+	h.DB.SetContribution(&models.Contribution{ProjectID: p.ID, Owner: models.OwnerAhmad, Hours: ahmadHours})
 
 	h.Dashboard(w, r)
 }
 
-// DeleteProject handles DELETE /projects/:id
 func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	
 	if err := h.DB.DeleteProject(id); err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	h.Dashboard(w, r)
-}
-
-// MoveProject changes status (drag & drop)
-func (h *Handler) MoveProject(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	status := models.ProjectStatus(chi.URLParam(r, "status"))
-
-	project, err := h.DB.GetProjectByID(id)
-	if err != nil || project == nil {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
-	project.Status = status
-	project.UpdatedAt = time.Now()
-	
-	if err := h.DB.UpdateProject(project); err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-// RevenueDetails returns split calculation for a project
-func (h *Handler) RevenueDetails(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	full, err := h.DB.GetProjectFull(id)
-	if err != nil || full == nil {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
-	h.Templates.ExecuteTemplate(w, "revenue-details", full)
 }

@@ -1,4 +1,3 @@
-// models/project.go - Data models for FullDash
 package models
 
 import "time"
@@ -16,55 +15,50 @@ const (
 type ProjectStatus string
 
 const (
-	StatusPending ProjectStatus = "pending"
-	StatusPaid    ProjectStatus = "paid"
-	StatusDone    ProjectStatus = "done"
+	StatusNew       ProjectStatus = "new"
+	StatusProgress  ProjectStatus = "in_progress"
+	StatusDone      ProjectStatus = "done"
+	StatusPaid      ProjectStatus = "paid"
 )
 
 // Project is the main entity
 type Project struct {
-	ID              int64         `json:"id"`
-	Name            string        `json:"name"`
-	Description     string        `json:"description"`
-	Client          string        `json:"client"`
-	SecuredBy       Owner         `json:"secured_by"` // noor, ahmad, both
-	AmountCents     int64         `json:"amount_cents"` // Stripe amount (cents)
-	Revenue         float64       `json:"revenue"`      // actual received (dollars)
-	Status          ProjectStatus `json:"status"`
-	StripePaymentID string        `json:"stripe_payment_id"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	ID              int64         `json:"id" db:"id"`
+	Client          string        `json:"client" db:"client"`
+	Description     string        `json:"description" db:"description"`
+	Revenue         float64       `json:"revenue" db:"revenue"`
+	Status          ProjectStatus `json:"status" db:"status"`
+	SecuredBy       Owner         `json:"secured_by" db:"secured_by"`
+	StripePaymentID string        `json:"stripe_payment_id" db:"stripe_payment_id"`
+	CreatedAt       time.Time     `json:"created_at" db:"created_at"`
 }
 
-// Contribution tracks hours worked per person
+// Contribution tracks work per owner
 type Contribution struct {
-	ID        int64     `json:"id"`
-	ProjectID int64     `json:"project_id"`
-	Person    Owner     `json:"person"` // noor or ahmad
-	Hours     float64   `json:"hours"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64     `json:"id" db:"id"`
+	ProjectID int64     `json:"project_id" db:"project_id"`
+	Owner     Owner     `json:"owner" db:"owner"`
+	Hours     float64   `json:"hours" db:"hours"`
+	Notes     string    `json:"notes" db:"notes"`
 }
 
-// RevenueSplit represents calculated payouts
-type RevenueSplit struct {
-	NoorShare   float64 `json:"noor_share"`
-	AhmadShare  float64 `json:"ahmad_share"`
-	SplitMethod string  `json:"split_method"` // "owner" or "hours"
+// Metrics for dashboard
+type Metrics struct {
+	TotalRevenue   float64 `json:"total_revenue"`
+	NoorShare      float64 `json:"noor_share"`
+	AhmadShare     float64 `json:"ahmad_share"`
+	OpenProjects   int     `json:"open_projects"`
 }
 
-// DashboardStats for the overview
-type DashboardStats struct {
-	TotalProjects   int     `json:"total_projects"`
-	PendingProjects int     `json:"pending_projects"`
-	PaidProjects    int     `json:"paid_projects"`
-	TotalRevenue    float64 `json:"total_revenue"`
-	NoorShare       float64 `json:"noor_share"`
-	AhmadShare      float64 `json:"ahmad_share"`
-}
-
-// ProjectWithContributions for UI display
+// ProjectWithContributions for UI
 type ProjectWithContributions struct {
-	Project       Project        `json:"project"`
-	Contributions []Contribution `json:"contributions"`
-	Split         RevenueSplit   `json:"split"`
+	Project       Project
+	Contributions []Contribution
+}
+
+// RevenueSplit result
+type RevenueSplit struct {
+	NoorShare   float64
+	AhmadShare  float64
+	Method      string // "owner" or "hours"
 }

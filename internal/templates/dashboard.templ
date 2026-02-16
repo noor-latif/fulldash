@@ -1,0 +1,165 @@
+package templates
+
+import (
+	"fmt"
+	"github.com/noor-latif/fulldash/internal/models"
+)
+
+// Layout is the base layout
+templ Layout(title string, content templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title }</title>
+			<script src="https://unpkg.com/htmx.org@2.0.0"></script>
+			<link rel="stylesheet" href="/static/css/main.css"/>
+		</head>
+		<body>
+			<header class="header">
+				<h1 class="header__logo">Fullstacked Dashboard</h1>
+				<p class="header__subtitle">Noor & Ahmad — Project Tracker</p>
+			</header>
+			<main class="main">
+				@content
+			</main>
+			<div id="modal"></div>
+		</body>
+	</html>
+}
+
+// Dashboard renders the full dashboard
+templ Dashboard(m *models.Metrics, new, progress, done, paid []models.Project, search string) {
+	@MetricsRow(m)
+	@SearchAndAdd(search)
+	@KanbanBoard(new, progress, done, paid)
+}
+
+// MetricsRow renders the metrics
+templ MetricsRow(m *models.Metrics) {
+	<section class="metrics">
+		@MetricsCard("Total Revenue", fmt.Sprintf("%.0f kr", m.TotalRevenue), "")
+		@MetricsCard("Noor's Share", fmt.Sprintf("%.0f kr", m.NoorShare), "metric-card--noor")
+		@MetricsCard("Ahmad's Share", fmt.Sprintf("%.0f kr", m.AhmadShare), "metric-card--ahmad")
+		@MetricsCard("Open Projects", fmt.Sprintf("%d", m.OpenProjects), "")
+	</section>
+}
+
+// SearchAndAdd renders search + add button
+templ SearchAndAdd(search string) {
+	<section class="actions">
+		<input 
+			type="search" 
+			name="search" 
+			placeholder="Search projects..."
+			value={ search }
+			hx-get="/"
+			hx-target=".kanban"
+			hx-trigger="keyup changed delay:300ms"
+			hx-select=".kanban"
+			hx-swap="outerHTML"
+			class="search-input"
+		/>
+		<button 
+			class="btn btn--primary"
+			hx-get="/projects/new"
+			hx-target="#modal"
+			hx-swap="innerHTML"
+		>
+			+ Add Project
+		</button>
+	</section>
+}
+
+// KanbanBoard renders all 4 columns
+templ KanbanBoard(new, progress, done, paid []models.Project) {
+	<section class="kanban">
+		@StatusColumn("New", len(new), models.StatusNew, new)
+		@StatusColumn("In Progress", len(progress), models.StatusProgress, progress)
+		@StatusColumn("Done", len(done), models.StatusDone, done)
+		@StatusColumn("Paid", len(paid), models.StatusPaid, paid)
+	</section>
+}
+
+// ProjectForm renders add/edit form
+templ ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) {
+	<div class="modal modal--active">
+		<div class="modal__overlay" onclick="this.parentElement.remove()"></div>
+		<div class="modal__content">
+			if isEdit {
+				<h2>Edit Project</h2>
+			} else {
+				<h2>New Project</h2>
+			}
+			<form 
+				class="form"
+				if isEdit {
+					hx-put={ fmt.Sprintf("/projects/%d", p.ID) }
+				} else {
+					hx-post="/projects"
+				}
+				hx-target=".kanban"
+				hx-swap="outerHTML"
+				hx-on::after-request="document.querySelector('.modal')?.remove()"
+			>
+				<label class="form__field">
+					<span>Client *</span>
+					<input type="text" name="client" value={ p.Client } required/>
+				</label>
+				<label class="form__field">
+					<span>Description</span>
+					<textarea name="description">{ p.Description }</textarea>
+				</label>
+				<label class="form__field">
+					<span>Secured By *</span>
+					<select name="secured_by" required>
+						<option value="noor" selected?={ p.SecuredBy == models.OwnerNoor }>Noor</option>
+						<option value="ahmad" selected?={ p.SecuredBy == models.OwnerAhmad }>Ahmad</option>
+						<option value="both" selected?={ p.SecuredBy == models.OwnerBoth }>Both</option>
+					</select>
+				</label>
+				<label class="form__field">
+					<span>Status</span>
+					<select name="status">
+						<option value="new" selected?={ p.Status == models.StatusNew }>New</option>
+						<option value="in_progress" selected?={ p.Status == models.StatusProgress }>In Progress</option>
+						<option value="done" selected?={ p.Status == models.StatusDone }>Done</option>
+						<option value="paid" selected?={ p.Status == models.StatusPaid }>Paid</option>
+					</select>
+				</label>
+				<label class="form__field">
+					<span>Revenue (kr)</span>
+					<input type="number" step="0.01" name="revenue" value={ fmt.Sprintf("%.2f", p.Revenue) }/>
+				</label>
+				<hr/>
+				<h4>Contributions (hours)</h4>
+				<label class="form__field">
+					<span>Noor's Hours</span>
+					<input type="number" step="0.5" name="noor_hours" value={ fmt.Sprintf("%.1f", noorHours) }/>
+				</label>
+				<label class="form__field">
+					<span>Ahmad's Hours</span>
+					<input type="number" step="0.5" name="ahmad_hours" value={ fmt.Sprintf("%.1f", ahmadHours) }/>
+				</label>
+				<div class="form__actions">
+					<button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+					if isEdit {
+						<button type="submit" class="btn btn--primary">Update</button>
+						<button 
+							type="button" 
+							class="btn btn--danger"
+							hx-delete={ fmt.Sprintf("/projects/%d", p.ID) }
+							hx-target=".kanban"
+							hx-swap="outerHTML"
+							hx-confirm="Delete this project?"
+							onclick="event.stopPropagation()"
+						>Delete</button>
+					} else {
+						<button type="submit" class="btn btn--primary">Create</button>
+					}
+				</div>
+			</form>
+		</div>
+	</div>
+}
