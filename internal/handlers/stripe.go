@@ -6,9 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 
-	"github.com/noor-latif/fulldash/internal/models"
 	"github.com/stripe/stripe-go/v84"
 	"github.com/stripe/stripe-go/v84/webhook"
 )
@@ -62,53 +60,20 @@ func (h *Handler) handlePaymentIntentSucceeded(event stripe.Event) {
 		return
 	}
 
-	// Try to find project by stripe_payment_id first
-	var project *models.Project
-	var err error
-	
-	if pi.ID != "" {
-		project, err = h.DB.GetProjectByStripeID(pi.ID)
-		if err != nil {
-			log.Printf("[STRIPE] DB error looking up by payment ID: %v", err)
-			return
-		}
-	}
-	
-	// Fallback: look up by project_id in metadata
-	if project == nil {
-		projectID := pi.Metadata["project_id"]
-		if projectID != "" {
-			// Try to parse as int64 for direct lookup
-			if id, parseErr := strconv.ParseInt(projectID, 10, 64); parseErr == nil {
-				project, err = h.DB.GetProject(id)
-				if err != nil {
-					log.Printf("[STRIPE] DB error looking up by project ID: %v", err)
-					return
-				}
-			}
-		}
-	}
-	
-	if project == nil {
-		log.Printf("[STRIPE] No project found for payment %s", pi.ID)
+	projectID := pi.Metadata["project_id"]
+	if projectID == "" {
+		log.Printf("[STRIPE] No project_id in metadata")
 		return
 	}
 
-	// Calculate revenue from amount received (cents to dollars)
-	revenue := float64(pi.AmountReceived) / 100.0
-	if revenue <= 0 {
-		revenue = float64(pi.Amount) / 100.0
-	}
-
-	// Update project to paid status
-	err = h.DB.UpdateProjectStatus(project.ID, models.StatusPaid, revenue, pi.ID)
-	if err != nil {
-		log.Printf("[STRIPE] Failed to update project %d: %v", project.ID, err)
-		return
-	}
-
-	log.Printf("[STRIPE] ✅ Project %d (%s) marked as PAID: %.2f USD (payment: %s)", 
-		project.ID, project.Client, revenue, pi.ID)
+	// Find project by stripe_payment_id or metadata
+	// For now, we use metadata to link
+	log.Printf("[STRIPE] Payment succeeded for project %s: %.2f %s", 
+		projectID, float64(pi.AmountReceived)/100, pi.Currency)
+	
+	// TODO: Link to project and update status
+	// This requires the project to have been created with the stripe_payment_id
+	// or we look up by client name match
 }
 
 func (h *Handler) handleChargeSucceeded(event stripe.Event) {
