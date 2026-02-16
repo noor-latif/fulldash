@@ -1,0 +1,257 @@
+{{define "dashboard"}}
+{{template "base.html" .}}
+{{end}}
+
+{{define "content"}}
+<!-- Metrics Dashboard -->
+<section class="metrics" hx-get="/dashboard" hx-trigger="every 30s" hx-select=".metrics">
+    <div class="metric-card">
+        <span class="metric-card__value">{{printf "%.0f" .Stats.TotalRevenue}} kr</span>
+        <span class="metric-card__label">Total Revenue</span>
+    </div>
+    <div class="metric-card metric-card--noor">
+        <span class="metric-card__value">{{printf "%.0f" .Stats.NoorShare}} kr</span>
+        <span class="metric-card__label">Noor's Share</span>
+    </div>
+    <div class="metric-card metric-card--ahmad">
+        <span class="metric-card__value">{{printf "%.0f" .Stats.AhmadShare}} kr</span>
+        <span class="metric-card__label">Ahmad's Share</span>
+    </div>
+    <div class="metric-card">
+        <span class="metric-card__value">{{.Stats.TotalProjects}}</span>
+        <span class="metric-card__label">Total Projects</span>
+    </div>
+</section>
+
+<!-- Add Button -->
+<section class="actions">
+    <button class="btn btn--primary" 
+            hx-get="/projects/new" 
+            hx-target="#modal-container"
+            hx-swap="innerHTML">
+        + Add Project
+    </button>
+</section>
+
+<!-- Kanban Board -->
+{{template "kanban" .}}
+
+<!-- Modal Container -->
+<div id="modal-container" class="modal-container"></div>
+{{end}}
+
+{{define "kanban"}}
+<section class="kanban" id="kanban">
+    <div class="kanban__column" data-status="pending">
+        <h2 class="kanban__header">
+            Pending
+            <span class="kanban__count">{{len .Pending}}</span>
+        </h2>
+        <div class="kanban__list">
+            {{range .Pending}}
+                {{template "project-card-mini" .}}
+            {{else}}
+                <p class="kanban__empty">No pending projects</p>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="kanban__column" data-status="paid">
+        <h2 class="kanban__header">
+            Paid
+            <span class="kanban__count">{{len .Paid}}</span>
+        </h2>
+        <div class="kanban__list">
+            {{range .Paid}}
+                {{template "project-card-mini" .}}
+            {{else}}
+                <p class="kanban__empty">No paid projects</p>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="kanban__column" data-status="done">
+        <h2 class="kanban__header">
+            Done
+            <span class="kanban__count">{{len .Done}}</span>
+        </h2>
+        <div class="kanban__list">
+            {{range .Done}}
+                {{template "project-card-mini" .}}
+            {{else}}
+                <p class="kanban__empty">No completed projects</p>
+            {{end}}
+        </div>
+    </div>
+</section>
+{{end}}
+
+{{define "project-card-mini"}}
+<article class="project-card"
+     hx-get="/projects/{{.ID}}/card"
+     hx-target="this"
+     hx-swap="outerHTML"
+     hx-trigger="click"
+     data-id="{{.ID}}">
+    <div class="project-card__header">
+        <h3 class="project-card__title">{{.Name}}</h3>
+        <span class="tag tag--{{.SecuredBy}}">{{.SecuredBy}}</span>
+    </div>
+    {{if .Client}}
+    <p class="project-card__client">{{.Client}}</p>
+    {{end}}
+    {{if gt .Revenue 0}}
+    <p class="project-card__amount">{{printf "%.0f" .Revenue}} kr</p>
+    {{end}}
+</article>
+{{end}}
+
+{{define "project-card"}}
+<article class="project-card project-card--expanded" data-id="{{.Project.ID}}">
+    <div class="project-card__header">
+        <h3 class="project-card__title">{{.Project.Name}}</h3>
+        <div class="project-card__actions">
+            <button class="btn btn--icon" 
+                    hx-get="/projects/{{.Project.ID}}/edit"
+                    hx-target="#modal-container"
+                    hx-swap="innerHTML">Edit</button>
+            <button class="btn btn--icon btn--danger" 
+                    hx-delete="/projects/{{.Project.ID}}"
+                    hx-target="#kanban"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete this project?">Delete</button>
+            <button class="btn btn--icon" 
+                    hx-get="/projects/{{.Project.ID}}/card"
+                    hx-target="closest article"
+                    hx-swap="outerHTML">Close</button>
+        </div>
+    </div>
+    
+    {{if .Project.Client}}
+    <p class="project-card__client"><strong>Client:</strong> {{.Project.Client}}</p>
+    {{end}}
+    
+    {{if .Project.Description}}
+    <p class="project-card__desc">{{.Project.Description}}</p>
+    {{end}}
+    
+    <div class="project-card__meta">
+        <span class="tag tag--{{.Project.SecuredBy}}">Secured by: {{.Project.SecuredBy}}</span>
+        <span class="project-card__status">Status: {{.Project.Status}}</span>
+    </div>
+    
+    {{if gt .Project.Revenue 0}}
+    <div class="project-card__revenue">
+        <p><strong>Revenue:</strong> {{printf "%.2f" .Project.Revenue}} kr</p>
+        {{if .Project.StripePaymentID}}
+        <p class="project-card__stripe">Stripe: {{.Project.StripePaymentID}}</p>
+        {{end}}
+        <div class="project-card__split">
+            <p>Split method: {{.Split.SplitMethod}}</p>
+            <div class="split-bar">
+                <div class="split-bar__noor" style="width: {{percentage .Split.NoorShare .Project.Revenue}}%">
+                    Noor: {{printf "%.2f" .Split.NoorShare}} kr
+                </div>
+                <div class="split-bar__ahmad" style="width: {{percentage .Split.AhmadShare .Project.Revenue}}%">
+                    Ahmad: {{printf "%.2f" .Split.AhmadShare}} kr
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</article>
+{{end}}
+
+{{define "project-form"}}
+<div class="modal modal--active">
+    <div class="modal__overlay" onclick="this.parentElement.remove()"></div>
+    <div class="modal__content">
+        <h2>{{if .IsEdit}}Edit{{else}}New{{end}} Project</h2>
+        
+        <form class="form"
+              {{if .IsEdit}}
+              hx-put="/projects/{{.Project.Project.ID}}"
+              {{else}}
+              hx-post="/projects"
+              {{end}}
+              hx-target="#kanban"
+              hx-swap="outerHTML"
+              hx-on::after-request="document.querySelector('.modal').remove()">
+            
+            <label class="form__field">
+                <span>Project Name *</span>
+                <input type="text" name="name" required 
+                       value="{{if .IsEdit}}{{.Project.Project.Name}}{{end}}">
+            </label>
+            
+            <label class="form__field">
+                <span>Client</span>
+                <input type="text" name="client"
+                       value="{{if .IsEdit}}{{.Project.Project.Client}}{{end}}">
+            </label>
+            
+            <label class="form__field">
+                <span>Description</span>
+                <textarea name="description" rows="3">{{if .IsEdit}}{{.Project.Project.Description}}{{end}}</textarea>
+            </label>
+            
+            <label class="form__field">
+                <span>Secured By *</span>
+                <select name="secured_by" required>
+                    <option value="noor" {{if .IsEdit}}{{if eq .Project.Project.SecuredBy "noor"}}selected{{end}}{{end}}>Noor</option>
+                    <option value="ahmad" {{if .IsEdit}}{{if eq .Project.Project.SecuredBy "ahmad"}}selected{{end}}{{end}}>Ahmad</option>
+                    <option value="both" {{if .IsEdit}}{{if eq .Project.Project.SecuredBy "both"}}selected{{else}}selected{{end}}{{else}}selected{{end}}>Both</option>
+                </select>
+            </label>
+            
+            <label class="form__field">
+                <span>Expected Amount (kr) *</span>
+                <input type="number" name="amount_cents" required
+                       value="{{if .IsEdit}}{{div .Project.Project.AmountCents 100}}{{else}}0{{end}}">
+            </label>
+            
+            {{if .IsEdit}}
+            <label class="form__field">
+                <span>Status</span>
+                <select name="status">
+                    <option value="pending" {{if eq .Project.Project.Status "pending"}}selected{{end}}>Pending</option>
+                    <option value="paid" {{if eq .Project.Project.Status "paid"}}selected{{end}}>Paid</option>
+                    <option value="done" {{if eq .Project.Project.Status "done"}}selected{{end}}>Done</option>
+                </select>
+            </label>
+            
+            <label class="form__field">
+                <span>Actual Revenue (kr)</span>
+                <input type="number" step="0.01" name="revenue"
+                       value="{{printf "%.2f" .Project.Project.Revenue}}">
+            </label>
+            {{else}}
+            <label class="form__field">
+                <span>Initial Revenue (kr, optional)</span>
+                <input type="number" step="0.01" name="initial_revenue" value="0">
+            </label>
+            {{end}}
+            
+            <hr class="form__divider">
+            
+            <h4>Contributions (hours)</h4>
+            <label class="form__field">
+                <span>Noor's Hours</span>
+                <input type="number" step="0.5" name="noor_hours"
+                       value="{{if .IsEdit}}{{noorHours .Project.Contributions}}{{end}}">
+            </label>
+            
+            <label class="form__field">
+                <span>Ahmad's Hours</span>
+                <input type="number" step="0.5" name="ahmad_hours"
+                       value="{{if .IsEdit}}{{ahmadHours .Project.Contributions}}{{end}}">
+            </label>
+            
+            <div class="form__actions">
+                <button type="button" class="btn" onclick="this.closest('.modal').remove()">Cancel</button>
+                <button type="submit" class="btn btn--primary">{{if .IsEdit}}Update{{else}}Create{{end}}</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
