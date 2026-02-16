@@ -14,7 +14,9 @@ import (
 type Store interface {
 	CreateProject(p *models.Project) error
 	GetProject(id int64) (*models.Project, error)
+	GetProjectByStripeID(stripeID string) (*models.Project, error)
 	UpdateProject(p *models.Project) error
+	UpdateProjectStatus(id int64, status models.ProjectStatus, revenue float64, stripeID string) error
 	DeleteProject(id int64) error
 	ListProjects(search string) ([]models.Project, error)
 	GetMetrics() (*models.Metrics, error)
