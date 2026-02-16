@@ -1,3 +1,4 @@
+// store/db.go - Database operations (DRY refactored)
 package store
 
 import (
@@ -10,10 +11,14 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Compile-time check that DB implements Store
+var _ Store = (*DB)(nil)
+
 type DB struct {
 	*sql.DB
 }
 
+// New creates/opens database and runs migrations
 func New(dbPath string) (*DB, error) {
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -62,193 +67,113 @@ func (db *DB) migrate() error {
 	return err
 }
 
-func (db *DB) CreateProject(p *models.Project) error {
-	query := `INSERT INTO projects (client, description, revenue, status, secured_by, stripe_payment_id) 
-		VALUES (?, ?, ?, ?, ?, ?) RETURNING id, created_at`
-	return db.QueryRow(query, p.Client, p.Description, p.Revenue, p.Status, p.SecuredBy, p.StripePaymentID).Scan(&p.ID, &p.CreatedAt)
+// Project Scanner - DRY scan helper
+type projectScanner struct {
+	dest *models.Project
 }
 
+func (s projectScanner) Scan(rows *sql.Rows) error {
+	return rows.Scan(&s.dest.ID, &s.dest.Client, &s.dest.Description, &s.dest.Revenue, 
+		&s.dest.Status, &s.dest.SecuredBy, &s.dest.StripePaymentID, &s.dest.CreatedAt)
+}
+
+func (s projectScanner) ScanRow(row *sql.Row) error {
+	return row.Scan(&s.dest.ID, &s.dest.Client, &s.dest.Description, &s.dest.Revenue, 
+		&s.dest.Status, &s.dest.SecuredBy, &s.dest.StripePaymentID, &s.dest.CreatedAt)
+}
+
+// CreateProject inserts a new project
+func (db *DB) CreateProject(p *models.Project) error {
+	return db.QueryRow(qProjectInsert, p.Client, p.Description, p.Revenue, p.Status, 
+		p.SecuredBy, p.StripePaymentID).Scan(&p.ID, &p.CreatedAt)
+}
+
+// GetProject fetches a project by ID
 func (db *DB) GetProject(id int64) (*models.Project, error) {
 	p := &models.Project{}
-	query := `SELECT id, client, description, revenue, status, secured_by, stripe_payment_id, created_at FROM projects WHERE id = ?`
-	err := db.QueryRow(query, id).Scan(&p.ID, &p.Client, &p.Description, &p.Revenue, &p.Status, &p.SecuredBy, &p.StripePaymentID, &p.CreatedAt)
+	err := projectScanner{p}.ScanRow(db.QueryRow(qProjectByID, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return p, err
 }
 
+// GetProjectByStripeID fetches a project by Stripe payment ID
 func (db *DB) GetProjectByStripeID(stripeID string) (*models.Project, error) {
 	p := &models.Project{}
-	query := `SELECT id, client, description, revenue, status, secured_by, stripe_payment_id, created_at FROM projects WHERE stripe_payment_id = ?`
-	err := db.QueryRow(query, stripeID).Scan(&p.ID, &p.Client, &p.Description, &p.Revenue, &p.Status, &p.SecuredBy, &p.StripePaymentID, &p.CreatedAt)
+	err := projectScanner{p}.ScanRow(db.QueryRow(qProjectByStripeID, stripeID))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return p, err
 }
 
+// UpdateProject updates all project fields
 func (db *DB) UpdateProject(p *models.Project) error {
-	query := `UPDATE projects SET client=?, description=?, revenue=?, status=?, secured_by=?, stripe_payment_id=? WHERE id=?`
-	_, err := db.Exec(query, p.Client, p.Description, p.Revenue, p.Status, p.SecuredBy, p.StripePaymentID, p.ID)
+	_, err := db.Exec(qProjectUpdate, p.Client, p.Description, p.Revenue, p.Status, 
+		p.SecuredBy, p.StripePaymentID, p.ID)
 	return err
 }
 
+// UpdateProjectStatus updates status and payment info (used by webhooks)
 func (db *DB) UpdateProjectStatus(id int64, status models.ProjectStatus, revenue float64, stripeID string) error {
-	query := `UPDATE projects SET status=?, revenue=?, stripe_payment_id=? WHERE id=?`
-	_, err := db.Exec(query, status, revenue, stripeID, id)
+	_, err := db.Exec(qProjectUpdateStatus, status, revenue, stripeID, id)
 	return err
 }
 
+// DeleteProject removes a project (cascades to contributions)
 func (db *DB) DeleteProject(id int64) error {
-	_, err := db.Exec(`DELETE FROM projects WHERE id = ?`, id)
+	_, err := db.Exec(qProjectDelete, id)
 	return err
 }
 
+// ListProjects returns all projects, optionally filtered by search
 func (db *DB) ListProjects(search string) ([]models.Project, error) {
-	var query string
-	var args []interface{}
+	var rows *sql.Rows
+	var err error
 	
 	if search != "" {
-		query = `SELECT id, client, description, revenue, status, secured_by, stripe_payment_id, created_at 
-			FROM projects WHERE client LIKE ? OR description LIKE ? ORDER BY created_at DESC`
-		args = []interface{}{"%" + search + "%", "%" + search + "%"}
+		like := "%" + search + "%"
+		rows, err = db.Query(qProjectsSearch, like, like)
 	} else {
-		query = `SELECT id, client, description, revenue, status, secured_by, stripe_payment_id, created_at 
-			FROM projects ORDER BY created_at DESC`
+		rows, err = db.Query(qProjectsAll)
 	}
 	
-	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	return scanProjects(rows)
+	return scanAll(rows, func() *models.Project { return &models.Project{} }, 
+		func(p *models.Project) scanner { return projectScanner{p} })
 }
 
+// ListProjectsByStatus returns projects filtered by status
 func (db *DB) ListProjectsByStatus(status models.ProjectStatus) ([]models.Project, error) {
-	query := `SELECT id, client, description, revenue, status, secured_by, stripe_payment_id, created_at 
-		FROM projects WHERE status = ? ORDER BY created_at DESC`
-	rows, err := db.Query(query, status)
+	rows, err := db.Query(qProjectsByStatus, status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanProjects(rows)
-}
-
-func scanProjects(rows *sql.Rows) ([]models.Project, error) {
-	var projects []models.Project
-	for rows.Next() {
-		var p models.Project
-		if err := rows.Scan(&p.ID, &p.Client, &p.Description, &p.Revenue, &p.Status, &p.SecuredBy, &p.StripePaymentID, &p.CreatedAt); err != nil {
-			return nil, err
-		}
-		projects = append(projects, p)
-	}
-	return projects, rows.Err()
-}
-
-func (db *DB) GetContributions(projectID int64) ([]models.Contribution, error) {
-	query := `SELECT id, project_id, owner, hours, notes FROM contributions WHERE project_id = ?`
-	rows, err := db.Query(query, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var contribs []models.Contribution
-	for rows.Next() {
-		var c models.Contribution
-		if err := rows.Scan(&c.ID, &c.ProjectID, &c.Owner, &c.Hours, &c.Notes); err != nil {
-			return nil, err
-		}
-		contribs = append(contribs, c)
-	}
-	return contribs, rows.Err()
-}
-
-func (db *DB) SetContribution(c *models.Contribution) error {
-	// Upsert
-	query := `INSERT INTO contributions (project_id, owner, hours, notes) VALUES (?, ?, ?, ?)
-		ON CONFLICT(project_id, owner) DO UPDATE SET hours=excluded.hours, notes=excluded.notes`
-	res, err := db.Exec(query, c.ProjectID, c.Owner, c.Hours, c.Notes)
-	if err != nil {
-		return err
-	}
-	if c.ID == 0 {
-		id, _ := res.LastInsertId()
-		c.ID = id
-	}
-	return nil
-}
-
-func (db *DB) GetMetrics() (*models.Metrics, error) {
-	m := &models.Metrics{}
 	
-	// Total revenue and paid count
-	var paidCount int
-	err := db.QueryRow(`SELECT COALESCE(SUM(revenue), 0), COUNT(*) FROM projects WHERE status = 'paid'`).Scan(&m.TotalRevenue, &paidCount)
-	if err != nil {
-		return nil, err
-	}
-
-	// Open projects (not paid)
-	err = db.QueryRow(`SELECT COUNT(*) FROM projects WHERE status != 'paid'`).Scan(&m.OpenProjects)
-	if err != nil {
-		return nil, err
-	}
-
-	// Calculate shares from paid projects
-	paid, err := db.ListProjectsByStatus(models.StatusPaid)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, p := range paid {
-		contribs, _ := db.GetContributions(p.ID)
-		split := CalcRevenueSplit(&p, contribs)
-		m.NoorShare += split.NoorShare
-		m.AhmadShare += split.AhmadShare
-	}
-
-	return m, nil
+	return scanAll(rows, func() *models.Project { return &models.Project{} }, 
+		func(p *models.Project) scanner { return projectScanner{p} })
 }
 
-func CalcRevenueSplit(p *models.Project, contribs []models.Contribution) *models.RevenueSplit {
-	if p.Revenue <= 0 {
-		return &models.RevenueSplit{Method: "none"}
-	}
+// Generic scanner interface
+type scanner interface {
+	Scan(rows *sql.Rows) error
+}
 
-	// Check if we have contribution hours
-	var noorHours, ahmadHours float64
-	for _, c := range contribs {
-		if c.Owner == models.OwnerNoor {
-			noorHours = c.Hours
-		} else {
-			ahmadHours = c.Hours
+// Generic scanAll helper - DRY for scanning rows into slices
+func scanAll[T any](rows *sql.Rows, newFn func() *T, scannerFn func(*T) scanner) ([]T, error) {
+	var results []T
+	for rows.Next() {
+		item := newFn()
+		if err := scannerFn(item).Scan(rows); err != nil {
+			return nil, err
 		}
+		results = append(results, *item)
 	}
-
-	// If both have hours, use hours-based split
-	if noorHours > 0 && ahmadHours > 0 {
-		total := noorHours + ahmadHours
-		return &models.RevenueSplit{
-			NoorShare:  p.Revenue * (noorHours / total),
-			AhmadShare: p.Revenue * (ahmadHours / total),
-			Method:     "hours",
-		}
-	}
-
-	// Default: owner-based split
-	switch p.SecuredBy {
-	case models.OwnerNoor:
-		return &models.RevenueSplit{NoorShare: p.Revenue, AhmadShare: 0, Method: "owner"}
-	case models.OwnerAhmad:
-		return &models.RevenueSplit{NoorShare: 0, AhmadShare: p.Revenue, Method: "owner"}
-	default: // both
-		half := p.Revenue / 2
-		return &models.RevenueSplit{NoorShare: half, AhmadShare: half, Method: "owner"}
-	}
+	return results, rows.Err()
 }
