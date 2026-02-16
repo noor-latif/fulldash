@@ -187,7 +187,7 @@ func SearchAndAdd(search string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-get=\"/\" hx-target=\".kanban\" hx-trigger=\"keyup changed delay:300ms\" hx-select=\".kanban\" hx-swap=\"outerHTML\" class=\"search-input\"> <button class=\"btn btn--primary\" hx-get=\"/projects/new\" hx-target=\"#modal\" hx-swap=\"innerHTML\">+ Add Project</button></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-get=\"/\" hx-target=\".kanban\" hx-trigger=\"keyup changed delay:300ms\" hx-select=\".kanban\" hx-swap=\"outerHTML\" class=\"search\"> <button class=\"btn btn--primary\" hx-get=\"/projects/new\" hx-target=\"#modal\" hx-swap=\"innerHTML\">+ Add Project</button></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -272,12 +272,12 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 			return templ_7745c5c3_Err
 		}
 		if isEdit {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<h2>Edit Project</h2>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<h2 class=\"modal__title\">Edit Project</h2>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<h2>New Project</h2>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<h2 class=\"modal__title\">New Project</h2>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -310,7 +310,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " hx-target=\".kanban\" hx-swap=\"outerHTML\" hx-on::after-request=\"document.querySelector('.modal')?.remove()\"><label class=\"form__field\"><span>Client *</span> <input type=\"text\" name=\"client\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " hx-target=\".kanban\" hx-swap=\"outerHTML\" hx-on::after-request=\"document.querySelector('.modal')?.remove()\"><label class=\"form__field\"><span class=\"form__field-label\">Client *</span> <input type=\"text\" name=\"client\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -323,7 +323,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" required></label> <label class=\"form__field\"><span>Description</span> <textarea name=\"description\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" required></label> <label class=\"form__field\"><span class=\"form__field-label\">Description</span> <textarea name=\"description\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -336,7 +336,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</textarea></label> <label class=\"form__field\"><span>Secured By *</span> <select name=\"secured_by\" required><option value=\"noor\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</textarea></label> <label class=\"form__field\"><span class=\"form__field-label\">Secured By *</span> <select name=\"secured_by\" required><option value=\"noor\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -366,7 +366,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, ">Both</option></select></label> <label class=\"form__field\"><span>Status</span> <select name=\"status\"><option value=\"new\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, ">Both</option></select></label> <label class=\"form__field\"><span class=\"form__field-label\">Status</span> <select name=\"status\"><option value=\"new\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -406,7 +406,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, ">Paid</option></select></label> <label class=\"form__field\"><span>Revenue (kr)</span> <input type=\"number\" step=\"0.01\" name=\"revenue\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, ">Paid</option></select></label> <label class=\"form__field\"><span class=\"form__field-label\">Revenue (kr)</span> <input type=\"number\" step=\"0.01\" name=\"revenue\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -419,7 +419,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"></label><hr><h4>Contributions (hours)</h4><label class=\"form__field\"><span>Noor's Hours</span> <input type=\"number\" step=\"0.5\" name=\"noor_hours\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"></label><hr class=\"form__divider\"><h4 class=\"form__section-title\">Contributions (hours)</h4><label class=\"form__field\"><span class=\"form__field-label\">Noor's Hours</span> <input type=\"number\" step=\"0.5\" name=\"noor_hours\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -432,7 +432,7 @@ func ProjectForm(p *models.Project, isEdit bool, noorHours, ahmadHours float64) 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"></label> <label class=\"form__field\"><span>Ahmad's Hours</span> <input type=\"number\" step=\"0.5\" name=\"ahmad_hours\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"></label> <label class=\"form__field\"><span class=\"form__field-label\">Ahmad's Hours</span> <input type=\"number\" step=\"0.5\" name=\"ahmad_hours\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
